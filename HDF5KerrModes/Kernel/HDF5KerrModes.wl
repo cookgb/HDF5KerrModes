@@ -72,6 +72,21 @@ ReadSpectralCoefsTTM::usage=
 "Read in the TTM-LR spectral coefficients data."
 
 
+QNMOTMultipletQ::usage=
+"QNMOTMultipletQ[{l,m,n}] "<>
+"Returns True if QNM {l,m,n} is an overtone multiplet."
+
+
+QNMOTSingletQ::usage=
+"QNMOTSingletQ[{l,m,n}] "<>
+"Returns True if QNM {l,m,n} is an overtone singlet."
+
+
+TTMOTMultipletQ::usage=
+"TTMOTMultipletQ[{l,m,n}] "<>
+"Returns True if TTM {l,m,n} is an overtone multiplet."
+
+
 (* ::Subsection::Closed:: *)
 (*Plotting Routines*)
 
@@ -222,6 +237,18 @@ TTMSpectralCoefIm::usage=
 "Plot the imaginary part of the spectral coefficients for the specified TTM."
 
 
+PlotAccumulation\[Omega]::usage=
+"PlotAccumulation\[Omega][l,m,n,Nf,a0] "<>
+"For a set of QNMs which approach a common accumulation point, "<>
+"fit the behavior of the mode frequency and plot the results."
+
+
+PlotAccumulationAlm::usage=
+"PlotAccumulationAlm[l,m,n,Nf,a0] "<>
+"For a set of QNMs which approach a common accumulation point, "<>
+"fit the behavior of the separation constant and plot the results."
+
+
 (* ::Subsection::Closed:: *)
 (*Reserved Globals*)
 
@@ -257,7 +284,7 @@ ReadKerrMode::badtype="Unknown mode type: `1`.";
 ReadKerrMode::badovertone="Improper overtone index: `1`.";
 ReadKerrMode::badmindex="Improper m index: `1`.";
 ReadKerrMode::badlindex="Improper l index: `1`.";
-ReadKerrMode[type_,mode_List]:=
+ReadKerrMode[type_String,mode_List]:=
 Module[{nname,mnamea,mname,modename},
 	If[!(type=="QNM" || type=="TTML" || type=="TTMR"),Message[ReadKerrModes::badtype,type];Abort[]];
 	If[Head[mode[[3]]]==List,
@@ -277,7 +304,7 @@ Module[{nname,mnamea,mname,modename},
 		"TTMR",Import[HDF5KERRMODESDIR<>"KerrTTMR_"<>nname<>".h5",{"HDF5","Datasets",{"/n"<>nname<>"/m"<>mname<>"/"<>modename}}]
 	]
 ]
-ReadKerrMode[l_Integer,m_Integer,n_Integer|n_List]:=ReadKerrMode[{l,m,n}]
+ReadKerrMode[type_String,l_Integer,m_Integer,n_Integer|n_List]:=ReadKerrMode[type,{l,m,n}]
 
 
 (* ::Subsection::Closed:: *)
@@ -467,6 +494,26 @@ Module[{rawdat,full,amod,short,a,lr=range,phase,index,pc=OptionValue[PhaseChoice
 ReadSpectralCoefsTTM[LR_,l_Integer,m_Integer,n_Integer|n_List,range_List:{1,-1},opts:OptionsPattern[]]:=ReadSpectralCoefsTTM[LR,{l,m,n},range,opts]
 
 
+(* ::Subsection::Closed:: *)
+(*Lists of known Overtone Multiplets*)
+
+
+QNMOTlist=Join[Table[{2,-2,n},{n,13,16}],Table[{3,-2,n},{n,26,29}],{{2,1,8},{2,2,8}},Table[{2,0,n},{n,8,26}],Table[{2,1,n},{n,34,39}]];
+QNMOTSlist={{2,-2,15},{3,-2,28}}; (* Special cases of "single" multiplets *)
+
+
+QNMOTMultipletQ[qnm_]:=MemberQ[HDF5KerrModes`Private`QNMOTlist,qnm]
+
+
+QNMOTSingletQ[qnm_]:=MemberQ[HDF5KerrModes`Private`QNMOTSlist,qnm]
+
+
+TTMOTlist=Flatten[Table[{l,0,n},{n,0,1},{l,2,8}],1];
+
+
+TTMOTMultipletQ[ttm_]:=MemberQ[HDF5KerrModes`Private`TTMOTlist,ttm]
+
+
 (* ::Section::Closed:: *)
 (*Plotting Routines*)
 
@@ -625,26 +672,6 @@ TTMLPlotAlm[ttmlist_List,opts:OptionsPattern[]]:=TTMPlotAlm["L",ttmlist,opts]
 
 (* ::Subsection::Closed:: *)
 (*Routines to Plot \[Omega] and Alm for sets of modes for a specific "m"*)
-
-
-(* ::Subsubsection::Closed:: *)
-(*Lists of known Overtone Multiplets*)
-
-
-QNMOTlist=Join[Table[{2,-2,n},{n,13,16}],Table[{3,-2,n},{n,26,29}],{{2,1,8},{2,2,8}},Table[{2,0,n},{n,8,26}],Table[{2,1,n},{n,34,39}]];
-QNMOTSlist={{2,-2,15},{3,-2,28}}; (* Special cases of "single" multiplets *)
-
-
-QNMOTMultipletQ[qnm_]:=MemberQ[HDF5KerrModes`Private`QNMOTlist,qnm]
-
-
-QNMOTSingletQ[qnm_]:=MemberQ[HDF5KerrModes`Private`QNMOTSlist,qnm]
-
-
-TTMOTlist=Flatten[Table[{l,0,n},{n,0,1},{l,2,8}],1];
-
-
-TTMMOTMultipletQ[ttm_]:=MemberQ[HDF5KerrModes`Private`TTMOTlist,ttm]
 
 
 (* ::Subsubsection::Closed:: *)
@@ -1146,6 +1173,160 @@ Module[{rawdat,Na,Nl,lmin,lmax,lind,Lind,amin,amax,alist,llist,llen,plotline,plo
 	];
 	ListPointPlot3D[plotlist,PlotRange->range,AxesLabel->alabel,PlotLabel->label,FilterRules[FilterRules[{opts},Options[ListPointPlot3D]],Except[{PlotRange,AxesLabel,PlotLabel}]]]
 ]
+
+
+(* ::Subsection::Closed:: *)
+(*Routines for QNM Accumulation Plots*)
+
+
+Options[OTLists]={OTskip->{},OTmultiple->{}};
+OTLists[overtones_List,OptionsPattern[]]:=
+Module[{nf=DeleteDuplicates[overtones],skip=DeleteDuplicates[OptionValue[OTskip]],
+		multiple=DeleteDuplicates[OptionValue[OTmultiple]],otsort,nfint,skipint,skipotm,otfit},
+	otsort[a_,b_]:=If[Head[a]==Head[b],OrderedQ[{a,b}],Null[],If[Head[a]==List,a[[1]]<=b,Null[],a<=b[[1]]]];
+	(* overtones includes all possible overtones to include. *)
+	(* If listed as a multiplet, then all multiplets of the same overtone will be included. *)
+	(* skip specifies which overtones will be skipped. *)
+	(* If a skip is an integer, and that overtone is an overtone multiplet, then all multiplets will be skipped *)
+	(* If a skip is a specific overtone multiplet, then only that multiplet will be skipped *)
+	(* multiple must specify all overtone multiplets and their degeneracy *)
+	(* Remove multiplet info from overtones & skip *)
+	nfint=Sort[DeleteDuplicates[If[ListQ[#],#[[1]],#]&/@nf]];
+	skipint=Sort[DeleteDuplicates[If[ListQ[#],#[[1]],#]&/@skip]];(* make sure only specified multiplets are skipped *)
+	skipint=Select[skipint,!MemberQ[#[[1]]&/@Select[skip,ListQ],#]&];
+	(* Reduce the skips from the integer overtones *)
+	nfint=Select[nfint,(!MemberQ[skipint,#])&];
+	(* Save specified multiplets to skip *)
+	skipotm=Select[skip,ListQ];
+	(* Expand all overtone multiplets *)
+	Do[
+		If[MemberQ[nfint,otm[[1]]],Do[AppendTo[nfint,{otm[[1]],nm-1}],{nm,otm[[2]]}];
+		nfint=Select[nfint,(ListQ[#]||#!=otm[[1]])&]];
+	,{otm,multiple}];
+	(* Remove explicitly skipped multiplets *)
+	otfit=Sort[Select[nfint,!MemberQ[skipotm,#]&],otsort];
+	{otfit,Range[0,Length[otfit]-1]}
+]
+
+
+Options[PlotAccumulation\[Omega]]=Union[{OTskip->{},OTmultiple->{}},Options[Plot],Options[ListPlot]];
+SetOptions[PlotAccumulation\[Omega],AxesLabel->Automatic,AxesOrigin->Automatic,PlotLabel->Automatic,PlotRange->Automatic];
+PlotAccumulation\[Omega][l_Integer,m_Integer,n_List,Nv_Integer,
+					a0_Real|a0_Rational|a0_Integer,
+					opts:OptionsPattern[]]:=
+Module[{s=-2,KerrSEQ,nf,nprime,fitlists,i,j,qnmend,qnmRe,qnmIm,ReList={},ImList={},Refit,ReLOF,ReParams,ReFitData,Imfit,ImLOF,ImParams,ImFitData,rplot,iplot,label,prange=OptionValue[PlotRange],aorig=OptionValue[AxesOrigin],plabel=OptionValue[PlotLabel],realabel=OptionValue[AxesLabel],imalabel=OptionValue[AxesLabel]},
+	SetOptions[ListPlot,ImageSize->800,TicksStyle->Directive[14],PlotRange->All,PlotMarkers->Automatic];
+	fitlists=OTLists[n,FilterRules[{opts},Options[OTLists]]];
+	nf=fitlists[[1]];
+	nprime=fitlists[[2]];
+	For[i=1,i<=Length[nf],++i,
+		qnmend=Function[x,{1-x[[1]],x[[2]]-m/2,x[[3]]}]/@ Take[ReadKerrMode["QNM",l,m,nf[[i]]],{-Nv,-1},{1,3}];
+		qnmRe=Function[x,{x[[1]],x[[2]]}]/@qnmend;
+		qnmIm=Function[x,{x[[1]],x[[3]]}]/@qnmend;
+		qnmRe=DeleteCases[qnmRe,{eps_,_}/;eps>a0];
+		qnmIm=DeleteCases[qnmIm,{eps_,_}/;eps>a0];
+		AppendTo[ReList,qnmRe];AppendTo[ImList,qnmIm];
+	];
+	ReFitData=Flatten[Table[{nprime[[i]],ReList[[i,j,1]],ReList[[i,j,2]]},{i,1,Length[nprime]},{j,1,Length[ReList[[i]]]}],1];
+	ImFitData=Flatten[Table[{nprime[[i]],ImList[[i,j,1]],ImList[[i,j,2]]},{i,1,Length[nprime]},{j,1,Length[ImList[[i]]]}],1];
+	If[nf[[1]]==0,
+		Refit=NonlinearModelFit[ReFitData,-\[Alpha]1 Sqrt[\[Epsilon]af/2]+(\[Alpha]2+\[Alpha]3 naf)\[Epsilon]af,{\[Alpha]1,\[Alpha]2,\[Alpha]3},{naf,\[Epsilon]af}];
+		Imfit=NonlinearModelFit[ImFitData,-(naf+1/2)(Sqrt[\[Epsilon]af/2]-\[Alpha]4 \[Epsilon]af),{\[Alpha]4},{naf,\[Epsilon]af}],
+		Refit=NonlinearModelFit[ReFitData,+(\[Alpha]1+\[Alpha]2 naf)\[Epsilon]af,{\[Alpha]1,\[Alpha]2},{naf,\[Epsilon]af}];
+		Imfit=NonlinearModelFit[ImFitData,-1(\[Alpha]3+naf+1/2)Sqrt[\[Epsilon]af/2]+(\[Alpha]4+\[Alpha]5 naf)\[Epsilon]af,{\[Alpha]3,\[Alpha]4,\[Alpha]5},{naf,\[Epsilon]af}]
+	];
+
+	Print["Re(\!\(\*OverscriptBox[\(\[Omega]\), \(_\)]\))= ",Normal[Refit]];
+	Print["Im(\!\(\*OverscriptBox[\(\[Omega]\), \(_\)]\))= ",Normal[Imfit]];
+	Off[SetPrecision::"precsm"];Off[N::"precsm"];
+	Print[MatrixForm[{{"Re(\!\(\*OverscriptBox[\(\[Omega]\), \(_\)]\))",Refit["ParameterConfidenceIntervalTable"]},{"Im(\!\(\*OverscriptBox[\(\[Omega]\), \(_\)]\))",Imfit["ParameterConfidenceIntervalTable"]}}]];
+	On[SetPrecision::"precsm"];On[N::"precsm"];
+
+	(* Modify nf for multiplet labels *)
+	For[i=1,i<=Length[nf],++i,
+		If[Length[nf[[i]]]==2,nf[[i]]=Subscript[nf[[i,1]], nf[[i,2]]]];
+	];
+	ReParams=Refit["BestFitParameters"];
+	ImParams=Imfit["BestFitParameters"];
+	If[nf[[1]]==0,
+		ReLOF[nf_,\[Epsilon]f_]:=-\[Alpha]1 Sqrt[\[Epsilon]f/2]/.ReParams;
+		ImLOF[nf_,\[Epsilon]f_]:=-(nf+1/2)Sqrt[\[Epsilon]f/2]/.ImParams,
+		ReLOF[nf_,\[Epsilon]f_]:=+(\[Alpha]1+\[Alpha]2 nf)\[Epsilon]f/.ReParams;
+		ImLOF[nf_,\[Epsilon]f_]:=-1(\[Alpha]3+nf+1/2)Sqrt[\[Epsilon]f/2]/.ImParams
+	];
+	If[prange==Automatic,prange={{0,a0},All}];
+	If[aorig==Automatic,aorig={0,0}];
+	If[plabel==Automatic,plabel = Style[DisplayForm[RowBox[{"l=",l," m=",m," n=",nf}]],16];];
+	If[realabel==Automatic,realabel = {Style["1-\!\(\*OverscriptBox[\(a\), \(_\)]\)",16],Style["Re(\!\(\*OverscriptBox[\(\[Omega]\), \(_\)]\))-m/2",16]};];
+	rplot=Show[ListPlot[ReList,PlotRange->prange,AxesOrigin->aorig,AxesLabel->realabel,PlotLabel->plabel,FilterRules[FilterRules[{opts},Options[ListPlot]],Except[{Joined,PlotRange,AxesOrigin,AxesLabel,PlotLabel}]]],Plot[ReLOF[#,\[Epsilon]]&/@nprime,{\[Epsilon],0,a0},PlotStyle->{{Red,Dashed}}],Plot[Refit[#,\[Epsilon]]&/@nprime,{\[Epsilon],0,a0}]];
+	If[imalabel==Automatic,imalabel = {Style["1-\!\(\*OverscriptBox[\(a\), \(_\)]\)",16],Style["Im(\!\(\*OverscriptBox[\(\[Omega]\), \(_\)]\))",16]};];
+	iplot=Show[ListPlot[ImList,PlotRange->prange,AxesOrigin->aorig,AxesLabel->imalabel,PlotLabel->plabel,FilterRules[FilterRules[{opts},Options[ListPlot]],Except[{Joined,PlotRange,AxesOrigin,AxesLabel,PlotLabel}]]],Plot[ImLOF[#,\[Epsilon]]&/@nprime,{\[Epsilon],0,a0},PlotStyle->{{Red,Dashed}}],Plot[Imfit[#,\[Epsilon]]&/@nprime,{\[Epsilon],0,a0}]];
+	{rplot,iplot}
+]
+
+
+Options[PlotAccumulationAlm]=Union[{OTskip->{},OTmultiple->{}},Options[Plot],Options[ListPlot]];
+SetOptions[PlotAccumulationAlm,AxesLabel->Automatic,AxesOrigin->Automatic,PlotLabel->Automatic,PlotRange->Automatic];
+PlotAccumulationAlm[l_Integer,m_Integer,n_List,Nv_Integer,
+					a0_Real|a0_Rational|a0_Integer,
+					opts:OptionsPattern[]]:=
+Module[{s=-2,KerrSEQ,nf,nprime,fitlists,i,j,qnmend,qnmRe,qnmIm,ReList={},ImList={},Refit,ReLOF,ReParams,ReFitData,Imfit,ImLOF,ImParams,ImFitData,rplot,iplot,label,A0,intercept,\[Delta],prange=OptionValue[PlotRange],raorig=OptionValue[AxesOrigin],iaorig=OptionValue[AxesOrigin],plabel=OptionValue[PlotLabel],realabel=OptionValue[AxesLabel],imalabel=OptionValue[AxesLabel]},
+	SetOptions[ListPlot,ImageSize->800,TicksStyle->Directive[14],PlotRange->All,PlotMarkers->Automatic];
+	fitlists=OTLists[n,FilterRules[{opts},Options[OTLists]]];
+	nf=fitlists[[1]];
+	nprime=fitlists[[2]];
+	For[i=1,i<=Length[nf],++i,
+		qnmend=Function[x,{1-x[[1]],x[[4]],x[[5]]}]/@ Take[ReadKerrMode["QNM",l,m,nf[[i]]],{-Nv,-1},{1,5}];
+		qnmRe=Function[x,{x[[1]],x[[2]]}]/@qnmend;
+		qnmIm=Function[x,{x[[1]],x[[3]]}]/@qnmend;
+		qnmRe=DeleteCases[qnmRe,{eps_,_}/;eps>a0];
+		qnmIm=DeleteCases[qnmIm,{eps_,_}/;eps>a0];
+		AppendTo[ReList,qnmRe];AppendTo[ImList,qnmIm];
+	];
+	ReFitData=Flatten[Table[{nprime[[i]],ReList[[i,j,1]],ReList[[i,j,2]]},{i,1,Length[nprime]},{j,1,Length[ReList[[i]]]}],1];
+	ImFitData=Flatten[Table[{nprime[[i]],ImList[[i,j,1]],ImList[[i,j,2]]},{i,1,Length[nprime]},{j,1,Length[ImList[[i]]]}],1];
+	If[nf[[1]]==0,
+		Refit=NonlinearModelFit[ReFitData,l(l+1)-2+\[Beta]1+\[Beta]2 Sqrt[\[Epsilon]af/2]+(\[Beta]3+\[Beta]4 naf+\[Beta]5 naf^2)\[Epsilon]af,{\[Beta]1,\[Beta]2,\[Beta]3,\[Beta]4,\[Beta]5},{naf,\[Epsilon]af}];
+		Imfit=NonlinearModelFit[ImFitData,(naf+1/2)(\[Beta]6 Sqrt[\[Epsilon]af/2]+\[Beta]7 \[Epsilon]af),{\[Beta]6,\[Beta]7},{naf,\[Epsilon]af}],
+		Refit=NonlinearModelFit[ReFitData,l(l+1)-2+\[Beta]1+(\[Beta]2+\[Beta]3 naf+\[Beta]4 naf^2)\[Epsilon]af,{\[Beta]1,\[Beta]2,\[Beta]3,\[Beta]4},{naf,\[Epsilon]af}];
+		Imfit=NonlinearModelFit[ImFitData,(\[Beta]5+naf+1/2)\[Beta]6 Sqrt[\[Epsilon]af/2]+(\[Beta]7+\[Beta]8 naf)\[Epsilon]af,{\[Beta]5,\[Beta]6,\[Beta]7,\[Beta]8},{naf,\[Epsilon]af}]
+	];
+	A0=Refit["BestFitParameters"];
+	intercept=l(l+1)-2+\[Beta]1/.A0;
+	\[Delta]=Sqrt[7/4 m^2 - (-2+1/2)^2-(l(l+1)-2+\[Beta]1)/.A0];
+	Print["\[Delta] = ",\[Delta]];
+	Print["Re(\!\(\*SubscriptBox[\(A\), \(lm\)]\))= ",Normal[Refit]];
+	Print["Im(\!\(\*SubscriptBox[\(A\), \(lm\)]\))= ",Normal[Imfit]];
+	Off[SetPrecision::"precsm"];Off[N::"precsm"];
+	Print[MatrixForm[{{"Re(\!\(\*SubscriptBox[\(A\), \(lm\)]\))",Refit["ParameterConfidenceIntervalTable"]},{"Im(\!\(\*SubscriptBox[\(A\), \(lm\)]\))=",Imfit["ParameterConfidenceIntervalTable"]}}]];
+	On[SetPrecision::"precsm"];On[N::"precsm"];
+
+	(* Modify nf for multiplet labels *)
+	For[i=1,i<=Length[nf],++i,
+	If[Length[nf[[i]]]==2,nf[[i]]=Subscript[nf[[i,1]], nf[[i,2]]]];
+	];
+	ReParams=Refit["BestFitParameters"];
+	ImParams=Imfit["BestFitParameters"];
+	If[nf[[1]]==0,
+		ReLOF[nf_,\[Epsilon]f_]:=l(l+1)-2+\[Beta]1+\[Beta]2 Sqrt[\[Epsilon]f/2]/.ReParams;
+		ImLOF[nf_,\[Epsilon]f_]:=(nf+1/2)\[Beta]6 Sqrt[\[Epsilon]f/2]/.ImParams,
+		ReLOF[nf_,\[Epsilon]f_]:=l(l+1)-2+\[Beta]1+(\[Beta]2+\[Beta]3 nf+\[Beta]4 nf^2)\[Epsilon]f/.ReParams;
+		ImLOF[nf_,\[Epsilon]f_]:=(\[Beta]5+nf+1/2)\[Beta]6 Sqrt[\[Epsilon]f/2]/.ImParams
+	];
+	If[prange==Automatic,prange={{0,a0},All}];
+	If[raorig==Automatic,raorig={0,intercept}];
+	If[plabel==Automatic,plabel = Style[DisplayForm[RowBox[{"l=",l," m=",m," n=",nf}]],16];];
+	If[realabel==Automatic,realabel = {Style["1-\!\(\*OverscriptBox[\(a\), \(_\)]\)",16],Style["Re(\!\(\*SubscriptBox[\(A\), \(lm\)]\))",16]};];
+	rplot=Show[ListPlot[ReList,PlotRange->prange,AxesOrigin->raorig,AxesLabel->realabel,PlotLabel->plabel,FilterRules[FilterRules[{opts},Options[ListPlot]],Except[{Joined,PlotRange,AxesOrigin,AxesLabel,PlotLabel}]]],Plot[ReLOF[#,\[Epsilon]]&/@nprime,{\[Epsilon],0,a0},PlotStyle->{{Red,Dashed}}],Plot[Refit[#,\[Epsilon]]&/@nprime,{\[Epsilon],0,a0}]];
+	If[iaorig==Automatic,iaorig={0,0}];
+	If[imalabel==Automatic,imalabel = {Style["1-\!\(\*OverscriptBox[\(a\), \(_\)]\)",16],Style["Im(\!\(\*SubscriptBox[\(A\), \(lm\)]\))",16]};];
+	iplot=Show[ListPlot[ImList,PlotRange->prange,AxesOrigin->iaorig,AxesLabel->imalabel,PlotLabel->plabel,FilterRules[FilterRules[{opts},Options[ListPlot]],Except[{Joined,PlotRange,AxesOrigin,AxesLabel,PlotLabel}]]],Plot[ImLOF[#,\[Epsilon]]&/@nprime,{\[Epsilon],0,a0},PlotStyle->{{Red,Dashed}}],Plot[Imfit[#,\[Epsilon]]&/@nprime,{\[Epsilon],0,a0}]];
+	{rplot,iplot}
+]
+
+
+(* ::Section::Closed:: *)
+(*End of HDF5KerrModes Package*)
 
 
 End[] (* `Private` *)
